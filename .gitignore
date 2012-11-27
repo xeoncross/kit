@@ -1,0 +1,19 @@
+# Linux
+.*
+!.htaccess
+!.gitignore
+*~
+
+# OS X
+.DS_Store
+# Thumbnails
+._*
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Project
+phpunit.xml
+tests/report/*
+!tests/report/empty
