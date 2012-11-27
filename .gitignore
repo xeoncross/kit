@@ -15,5 +15,5 @@ Desktop.ini
 
 # Project
 phpunit.xml
-tests/report/*
-!tests/report/empty
+PHPUnit/report/*
+!PHPUnit/report/empty
