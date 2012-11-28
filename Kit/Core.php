@@ -24,14 +24,6 @@ define('KIT\URL_HOST', (strtolower(getenv('HTTPS')) == 'on' ? 'https' : 'http')
 define('KIT\URL_PATH', isset($argv[1])
 	? $argv[1] : rawurldecode(trim(parse_url(getenv('REQUEST_URI'), PHP_URL_PATH), '/')));
 
-// What filetype are they expecting? (json, xml, or html?)
-define('KIT\URL_TYPE', (preg_match('~\.([a-z]{3,4})($|\?)~', URL_PATH, $match)
-	? $match[1] : NULL));
-
-// What is the ISO 639-1 language code at the start of the URL path?
-define('KIT\URL_LANGUAGE', (preg_match('~^([a-z]{2})/~', URL_PATH, $match)
-	? $match[1] : 'en'));
-
 // Is this an AJAX request? (jQuery, Mootools, YUI, Dojo, etc...)
 define('KIT\IS_AJAX_REQUEST', strtolower(getenv('HTTP_X_REQUESTED_WITH')) === 'xmlhttprequest');
 
@@ -60,58 +52,6 @@ function site_url($path = NULL, array $params = NULL)
 	}
 
 	return $path . ($params ? '?'. str_replace('+', '%20', http_build_query($params, TRUE, '&')) : '');
-}
-
-/**
- * Color string output for the CLI using standard color codes.
- *
- * @param string $text to color
- * @param string $color of text
- * @param string $bold True to bold the text
- */
-function color_cli($text, $color, $bold = FALSE)
-{
-	$colors = array_flip(array(
-		30 => 'gray', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white', 'black'
-	));
-
-	return "\033[" . ($bold ? '1' : '0') . ';' . $colors[$color] . "m$text\033[0m";
-}
-
-/**
- * Safely fetch a $_POST value by key name
- *
- * @param string $key
- * @param mixed $default
- * @return mixed
- */
-function post($key, $default = NULL)
-{
-	return isset($_POST[$key]) ? $_POST[$key] : $default;
-}
-
-/**
- * Safely fetch a $_GET value by key name
- *
- * @param string $key
- * @param mixed $default
- * @return mixed
- */
-function get($key, $default = NULL)
-{
-	return isset($_GET[$key]) ? $_GET[$key] : $default;
-}
-
-/**
- * Safely fetch a $_SESSION value by key name
- *
- * @param string $key
- * @param mixed $default
- * @return mixed
- */
-function session($key, $default = NULL)
-{
-	return isset($_SESSION[$key]) ? $_SESSION[$key] : $default;
 }
 
 /**
@@ -164,6 +104,291 @@ function dump()
 	return $output;
 }
 
+/**
+ * Command line parsing and formatting class
+ */
+class CLI
+{
+	public static $options = NULL;
+
+	/**
+	 * Safely fetch a command line argument by name or position
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function arg($key, $default = NULL)
+	{
+		if(static::$options === NULL)
+		{
+			static::$options = static::parse();
+		}
+
+		return isset(static::$options[$key]) ? static::$options[$key] : $default;
+	}
+
+	/**
+	 * Color string output for the CLI using standard color codes.
+	 *
+	 * @param string $text to color
+	 * @param string $color of text
+	 * @param string $bold True to bold the text
+	 */
+	public static function color($text, $color, $bold = FALSE)
+	{
+		$colors = array_flip(array(
+			30 => 'gray', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white', 'black'
+		));
+
+		return "\033[" . ($bold ? '1' : '0') . ';' . $colors[$color] . "m$text\033[0m";
+	}
+
+	/**
+	 * Parse an array of command line arguments
+	 *
+	 * @param array $argv
+	 * @return array
+	 */
+	public static function parse(array $argv = NULL)
+	{
+		$argv = $argv ?: $_SERVER['argv'];
+		$options = array();
+
+		foreach($argv as $value)
+		{
+			if($value{0} == '-')
+			{
+				list($value, $key) = explode('=', ltrim($value, '-'), 2) + array(1 => '');
+
+				if($key)
+				{
+					$options[$value] = $key;
+					continue;
+				}
+			}
+
+			$options[] = $value;
+		}
+
+		return $options;
+	}
+}
+
+/**
+ * Core Kit bootstrap class to setup system defaults (if wanted)
+ */
+class Core
+{
+	/**
+	 * Define common system defaults
+	 */
+	public function defaults()
+	{
+		// A stream should respond to a connection attempt within ten seconds
+		ini_set('default_socket_timeout', 10);
+
+		// iconv encoding default
+		iconv_set_encoding("internal_encoding", "UTF-8");
+
+		// Multibyte encoding
+		mb_internal_encoding('UTF-8');
+
+		// Don't show SimpleXML/DOM errors (most of the web is invalid)
+		libxml_use_internal_errors(true);
+
+		// Please sir - use GMT instead of UTC for poor little MySQL's sake!
+		date_default_timezone_set('GMT');
+	}
+
+	/**
+	 * Filter all input to insure everything is valid unicode
+	 */
+	public function filterInput()
+	{
+		// Convert all input to valid, UTF-8 strings with no control characters
+		$_GET = \Kit\I18n::filter($_GET, false);
+		$_POST = \Kit\I18n::filter($_POST, false);
+		$_COOKIE = \Kit\I18n::filter($_COOKIE, false);
+	}
+
+	/**
+	 * Create root-level aliases for all classes defined in our Kit
+	 */
+	public function aliasClasses()
+	{
+		class_alias('\Kit\CLI', 'CLI');
+		class_alias('\Kit\Cipher', 'Cipher');
+		class_alias('\Kit\Cookie', 'Cookie');
+		class_alias('\Kit\DB', 'DB');
+		class_alias('\Kit\Event', 'Event');
+		class_alias('\Kit\I18n', 'I18n');
+		class_alias('\Kit\Input', 'Input');
+		class_alias('\Kit\Instance', 'Instance');
+		class_alias('\Kit\Login', 'Login');
+		class_alias('\Kit\OAuth2', 'OAuth2');
+		class_alias('\Kit\Response', 'Response');
+		class_alias('\Kit\Router', 'Router');
+		class_alias('\Kit\Session', 'Session');
+		class_alias('\Kit\SMTP', 'SMTP');
+		class_alias('\Kit\Table', 'Table');
+		class_alias('\Kit\Validator', 'Validator');
+		class_alias('\Kit\View', 'View');
+	}
+}
+
+/**
+ * Ciphers algorithms for encription, hashing, and base conversion
+ */
+class Cipher
+{
+	/**
+	 * Encrypt a string
+	 *
+	 * @param string $string to encrypt
+	 * @param string $key a cryptographically random string
+	 * @param int $algo the encryption algorithm
+	 * @param int $mode the block cipher mode
+	 * @return string
+	 */
+	public static function encrypt($string, $key, $algo = MCRYPT_RIJNDAEL_256, $mode = MCRYPT_MODE_CBC)
+	{
+		$iv = mcrypt_create_iv(mcrypt_get_iv_size($algo, $mode), MCRYPT_DEV_URANDOM);
+		return base64_encode(mcrypt_encrypt($algo, $key, $string, $mode, $iv) . $iv);
+	}
+
+	/**
+	 * Decrypt an encrypted string
+	 *
+	 * @param string $string to encrypt
+	 * @param string $key a cryptographically random string
+	 * @param int $algo the encryption algorithm
+	 * @param int $mode the block cipher mode
+	 * @return string
+	 */
+	public static function decrypt($string, $key, $algo = MCRYPT_RIJNDAEL_256, $mode = MCRYPT_MODE_CBC)
+	{
+		$string = base64_decode($string);
+		$size = mcrypt_get_iv_size($algo, $mode);
+		$iv = substr($string, -$size);
+		if(strlen($iv) === $size)
+		{
+			return rtrim(mcrypt_decrypt($algo, $key, substr($string, 0, -$size), $mode, $iv), "\x0");
+		}
+	}
+
+	/**
+	 * Hash a string using blowfish with a default of 12 iterations. To verify a hash,
+	 * pass the hash plus the string back to this function as the second parameter.
+	 *
+	 * @param string $string to hash
+	 * @param string|null $salt previous hash of string
+	 * @return string
+	 */
+	public static function hash($string, $salt = NULL, $iterations = '12')
+	{
+		$hash = crypt($string, $salt ?: "$2a\$$iterations$" . md5(mcrypt_create_iv(22, MCRYPT_DEV_URANDOM)));
+		if (strlen($hash) == 60) return $hash;
+	}
+
+	/**
+	 * Convert a higher-base ID key back to a base-10 integer
+	 *
+	 * @param string $key
+	 * @return integer
+	 */
+	public static function keyToID($key)
+	{
+		return function_exists('gmp_init') ? gmp_strval(gmp_init($key, 62), 10) : base_convert($key, 32, 10);
+	}
+
+	/**
+	 * Convert a base-10 integer to a higher-base ID key
+	 *
+	 * @param integer $id
+	 * @return string
+	 */
+	public static function IDToKey($id)
+	{
+		return function_exists('gmp_init') ? gmp_strval(gmp_init($id, 10), 62) : base_convert($key, 10, 32);
+	}
+
+	/**
+	 * Encode a string so it is safe to pass through the URL
+	 *
+	 * @param string $string to encode
+	 * @return string
+	 */
+	public static function base64_url_encode($string = NULL)
+	{
+		return strtr(base64_encode($string), '+/=', '-_~');
+	}
+
+	/**
+	 * Decode a string passed through the URL
+	 *
+	 * @param string $string to decode
+	 * @return string
+	 */
+	public static function base64_url_decode($string = NULL)
+	{
+		return base64_decode(strtr($string, '-_~', '+/='));
+	}
+}
+
+/**
+ * Handle reading and writing encrypted cookies
+ */
+class Cookie
+{
+	/**
+	 * Decrypt and fetch cookie data as long as the cookie has not expired
+	 *
+	 * @param string $name of cookie
+	 * @param array $config settings
+	 * @return mixed
+	 */
+	public static function get($name, $config = NULL)
+	{
+		if(isset($_COOKIE[$name]))
+		{
+			if($value = json_decode(Cipher::decrypt($_COOKIE[$name], $config['key']), TRUE))
+			{
+				if($value[0] < (time() + $config['timeout']))
+				{
+					return $value[1];
+				}
+			}
+		}
+
+		return FALSE;
+	}
+
+	/**
+	 * Called before any output is sent to create an encrypted cookie with the given value.
+	 *
+	 * @param string $key cookie name
+	 * @param mixed $value to save
+	 * @param array $config settings
+	 * return boolean
+	 */
+	public static function set($name, $value, $config)
+	{
+		extract($config);
+
+		// If the cookie is being removed we want it left blank
+		if($value)
+		{
+			$value = Cipher::encrypt(json_encode(array(time(), $value)), $key);
+		}
+
+		// Update the current cookie global
+		$_COOKIE[$name] = $value;
+
+		// Save cookie to user agent
+		setcookie($name, $value, $expires, $path, $domain, $secure, $httponly);
+	}
+}
 
 /**
  * Provides a database wrapper around the PDO service to help reduce the effort
@@ -351,221 +576,6 @@ class DB
 	}
 }
 
-
-/**
- * Core Kit bootstrap class to setup system defaults (if wanted)
- */
-class Core
-{
-	/**
-	 * Define common system defaults
-	 */
-	public function defaults()
-	{
-		// A stream should respond to a connection attempt within ten seconds
-		ini_set('default_socket_timeout', 10);
-
-		// iconv encoding default
-		iconv_set_encoding("internal_encoding", "UTF-8");
-
-		// Multibyte encoding
-		mb_internal_encoding('UTF-8');
-
-		// Don't show SimpleXML/DOM errors (most of the web is invalid)
-		libxml_use_internal_errors(true);
-
-		// Please sir - use GMT instead of UTC for poor little MySQL's sake!
-		date_default_timezone_set('GMT');
-	}
-
-	/**
-	 * Filter all input to insure everything is valid unicode
-	 */
-	public function filterInput()
-	{
-		// Convert all input to valid, UTF-8 strings with no control characters
-		$_GET = \Kit\I18n::filter($_GET, false);
-		$_POST = \Kit\I18n::filter($_POST, false);
-		$_COOKIE = \Kit\I18n::filter($_COOKIE, false);
-	}
-
-	/**
-	 * Create root-level aliases for all classes defined in our Kit
-	 */
-	public function aliasClasses()
-	{
-		class_alias('\Kit\DB', 'DB');
-		class_alias('\Kit\Cipher', 'Cipher');
-		class_alias('\Kit\Cookie', 'Cookie');
-		class_alias('\Kit\Event', 'Event');
-		class_alias('\Kit\I18n', 'I18n');
-		class_alias('\Kit\Instance', 'Instance');
-		class_alias('\Kit\Login', 'Login');
-		class_alias('\Kit\OAuth2', 'OAuth2');
-		class_alias('\Kit\Response', 'Response');
-		class_alias('\Kit\Router', 'Router');
-		class_alias('\Kit\Session', 'Session');
-		class_alias('\Kit\SMTP', 'SMTP');
-		class_alias('\Kit\Table', 'Table');
-		class_alias('\Kit\Validator', 'Validator');
-		class_alias('\Kit\View', 'View');
-	}
-}
-
-/**
- * Ciphers algorithms for encription, hashing, and base conversion
- */
-class Cipher
-{
-	/**
-	 * Encrypt a string
-	 *
-	 * @param string $string to encrypt
-	 * @param string $key a cryptographically random string
-	 * @param int $algo the encryption algorithm
-	 * @param int $mode the block cipher mode
-	 * @return string
-	 */
-	public static function encrypt($string, $key, $algo = MCRYPT_RIJNDAEL_256, $mode = MCRYPT_MODE_CBC)
-	{
-		$iv = mcrypt_create_iv(mcrypt_get_iv_size($algo, $mode), MCRYPT_DEV_URANDOM);
-		return base64_encode(mcrypt_encrypt($algo, $key, $string, $mode, $iv) . $iv);
-	}
-
-	/**
-	 * Decrypt an encrypted string
-	 *
-	 * @param string $string to encrypt
-	 * @param string $key a cryptographically random string
-	 * @param int $algo the encryption algorithm
-	 * @param int $mode the block cipher mode
-	 * @return string
-	 */
-	public static function decrypt($string, $key, $algo = MCRYPT_RIJNDAEL_256, $mode = MCRYPT_MODE_CBC)
-	{
-		$string = base64_decode($string);
-		$size = mcrypt_get_iv_size($algo, $mode);
-		$iv = substr($string, -$size);
-		if(strlen($iv) === $size)
-		{
-			return rtrim(mcrypt_decrypt($algo, $key, substr($string, 0, -$size), $mode, $iv), "\x0");
-		}
-	}
-
-	/**
-	 * Hash a string using blowfish with a default of 12 iterations. To verify a hash,
-	 * pass the hash plus the string back to this function as the second parameter.
-	 *
-	 * @param string $string to hash
-	 * @param string|null $salt previous hash of string
-	 * @return string
-	 */
-	public static function hash($string, $salt = NULL, $iterations = '12')
-	{
-		$hash = crypt($string, $salt ?: "$2a\$$iterations$" . md5(mcrypt_create_iv(22, MCRYPT_DEV_URANDOM)));
-		if (strlen($hash) == 60) return $hash;
-	}
-
-	/**
-	 * Convert a higher-base ID key back to a base-10 integer
-	 *
-	 * @param string $key
-	 * @return integer
-	 */
-	public static function keyToID($key)
-	{
-		return function_exists('gmp_init') ? gmp_strval(gmp_init($key, 62), 10) : base_convert($key, 32, 10);
-	}
-
-	/**
-	 * Convert a base-10 integer to a higher-base ID key
-	 *
-	 * @param integer $id
-	 * @return string
-	 */
-	public static function IDToKey($id)
-	{
-		return function_exists('gmp_init') ? gmp_strval(gmp_init($id, 10), 62) : base_convert($key, 10, 32);
-	}
-
-	/**
-	 * Encode a string so it is safe to pass through the URL
-	 *
-	 * @param string $string to encode
-	 * @return string
-	 */
-	public static function base64_url_encode($string = NULL)
-	{
-		return strtr(base64_encode($string), '+/=', '-_~');
-	}
-
-	/**
-	 * Decode a string passed through the URL
-	 *
-	 * @param string $string to decode
-	 * @return string
-	 */
-	public static function base64_url_decode($string = NULL)
-	{
-		return base64_decode(strtr($string, '-_~', '+/='));
-	}
-}
-
-/**
- * Handle reading and writing encrypted cookies
- */
-class Cookie
-{
-	/**
-	 * Decrypt and fetch cookie data as long as the cookie has not expired
-	 *
-	 * @param string $name of cookie
-	 * @param array $config settings
-	 * @return mixed
-	 */
-	public static function get($name, $config = NULL)
-	{
-		if(isset($_COOKIE[$name]))
-		{
-			if($value = json_decode(Cipher::decrypt($_COOKIE[$name], $config['key']), TRUE))
-			{
-				if($value[0] < (time() + $config['timeout']))
-				{
-					return $value[1];
-				}
-			}
-		}
-
-		return FALSE;
-	}
-
-	/**
-	 * Called before any output is sent to create an encrypted cookie with the given value.
-	 *
-	 * @param string $key cookie name
-	 * @param mixed $value to save
-	 * @param array $config settings
-	 * return boolean
-	 */
-	public static function set($name, $value, $config)
-	{
-		extract($config);
-
-		// If the cookie is being removed we want it left blank
-		if($value)
-		{
-			$value = Cipher::encrypt(json_encode(array(time(), $value)), $key);
-		}
-
-		// Update the current cookie global
-		$_COOKIE[$name] = $value;
-
-		// Save cookie to user agent
-		setcookie($name, $value, $expires, $path, $domain, $secure, $httponly);
-	}
-
-}
-
 /**
  * Provide an observer-based event system making it easier to tie into existing functionality
  */
@@ -632,6 +642,7 @@ class Event
 		return $parameters;
 	}
 }
+
 
 /**
  * Handles doing all the i18n and l10n stuff PHP should already do.
@@ -807,11 +818,78 @@ class I18n
 	}
 }
 
+
+/**
+ * Safely fetch values from PHP Super Global arrays
+ */
+class Input
+{
+	/**
+	 * Safely fetch a $_POST value by key name
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function post($key, $default = NULL)
+	{
+		return isset($_POST[$key]) ? $_POST[$key] : $default;
+	}
+
+	/**
+	 * Safely fetch a $_GET value by key name
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function get($key, $default = NULL)
+	{
+		return isset($_GET[$key]) ? $_GET[$key] : $default;
+	}
+
+	/**
+	 * Safely fetch a $_COOKIE value by key name
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function cookie($key, $default = NULL)
+	{
+		return isset($_COOKIE[$key]) ? $_COOKIE[$key] : $default;
+	}
+
+	/**
+	 * Safely fetch a command line argument by name or position
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function cli($key, $default = NULL)
+	{
+		return CLI::arg($key, $default);
+	}
+
+	/**
+	 * Safely fetch a $_SESSION value by key name
+	 *
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	public static function session($key, $default = NULL)
+	{
+		return isset($_SESSION[$key]) ? $_SESSION[$key] : $default;
+	}
+}
+
 /**
  * Dependency Injection + Service Locator
  */
-class Instance {
-
+class Instance
+{
 	public static $registry = array();
 
 	public static function register($name, \Closure $resolver)
